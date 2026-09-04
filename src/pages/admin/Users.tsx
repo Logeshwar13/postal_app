@@ -22,6 +22,7 @@ export const AdminUsers = () => {
   const [roleFilter, setRoleFilter] = useState('all');
   const [isLoading, setIsLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string; email: string } | null>(null);
   const [stats, setStats] = useState({ totalUsers: 0, totalStudents: 0, totalAdmins: 0, newThisMonth: 0 });
 
   useEffect(() => { fetchUsers(); }, []);
@@ -54,16 +55,7 @@ export const AdminUsers = () => {
     } catch { toast.error('Failed to update role'); }
   };
 
-  const handleDeleteUser = async (userId: string, userName: string, role: string) => {
-    if (role !== 'student') {
-      toast.error('Only student accounts can be deleted');
-      return;
-    }
-
-    const confirmMsg = `Are you sure you want to permanently delete student "${userName || 'this user'}"?\n\nThis will remove all their test results, quiz attempts, downloads, video progress, and profile from the database. This action cannot be undone.`;
-
-    if (!confirm(confirmMsg)) return;
-
+  const executeDeleteStudent = async (userId: string) => {
     try {
       setDeletingId(userId);
       toast.loading('Deleting student records...', { id: 'delete-student' });
@@ -83,6 +75,7 @@ export const AdminUsers = () => {
       if (error) throw error;
 
       toast.success('Student account permanently deleted!', { id: 'delete-student' });
+      setDeleteTarget(null);
       fetchUsers();
     } catch (err: any) {
       console.error('Error deleting student:', err);
@@ -198,7 +191,7 @@ export const AdminUsers = () => {
 
                         {u.role === 'student' && (
                           <button
-                            onClick={() => handleDeleteUser(u.id, u.full_name || u.email, u.role)}
+                            onClick={() => setDeleteTarget({ id: u.id, name: u.full_name || u.email, email: u.email })}
                             disabled={deletingId === u.id}
                             title="Permanently delete student account"
                             style={{
@@ -238,6 +231,54 @@ export const AdminUsers = () => {
           <p style={{ fontSize: 12, color: '#9ca3af', margin: 0 }}>Showing {filtered.length} of {users.length} users</p>
         </div>
       </div>
+
+      {/* Centered Custom Delete Confirmation Modal */}
+      {deleteTarget && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)', zIndex: 250, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ background: 'white', borderRadius: 20, width: '100%', maxWidth: 440, padding: 28, boxShadow: '0 20px 60px rgba(0,0,0,0.2)', textAlign: 'center', animation: 'fadeInScale 0.2s ease-out' }}>
+            <style>{`@keyframes fadeInScale{from{opacity:0;transform:scale(0.95)}to{opacity:1;transform:scale(1)}}`}</style>
+
+            {/* Warning Icon */}
+            <div style={{ width: 56, height: 56, borderRadius: '50%', background: '#fef2f2', border: '1px solid #fee2e2', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+              <Trash2 size={24} color="#ef4444" />
+            </div>
+
+            <h3 style={{ fontWeight: 800, fontSize: 18, color: '#111827', margin: '0 0 8px' }}>
+              Delete Student Account?
+            </h3>
+
+            <p style={{ fontSize: 14, color: '#4b5563', margin: '0 0 16px', lineHeight: 1.5 }}>
+              Are you sure you want to permanently delete student <strong style={{ color: '#111827' }}>"{deleteTarget.name}"</strong>?
+            </p>
+
+            <div style={{ background: '#fff1f2', border: '1px solid #ffe4e6', borderRadius: 12, padding: '12px 14px', margin: '0 0 20px', textAlign: 'left' }}>
+              <p style={{ fontSize: 12, color: '#991b1b', margin: 0, lineHeight: 1.5 }}>
+                ⚠️ <strong>Warning:</strong> This will remove all their test results, quiz attempts, downloads, video progress, and profile from the database. This action cannot be undone.
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                type="button"
+                onClick={() => setDeleteTarget(null)}
+                disabled={deletingId === deleteTarget.id}
+                style={{ flex: 1, padding: '11px 0', borderRadius: 10, border: '1.5px solid #e5e7eb', background: 'white', color: '#374151', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => executeDeleteStudent(deleteTarget.id)}
+                disabled={deletingId === deleteTarget.id}
+                style={{ flex: 1, padding: '11px 0', borderRadius: 10, border: 'none', background: '#ef4444', color: 'white', fontSize: 14, fontWeight: 700, cursor: deletingId === deleteTarget.id ? 'not-allowed' : 'pointer', opacity: deletingId === deleteTarget.id ? 0.7 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+              >
+                <Trash2 size={15} />
+                {deletingId === deleteTarget.id ? 'Deleting...' : 'Delete Account'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
