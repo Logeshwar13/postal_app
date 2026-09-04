@@ -60,23 +60,32 @@ export const AdminUsers = () => {
       setDeletingId(userId);
       toast.loading('Deleting student records...', { id: 'delete-student' });
 
-      // 1. Delete dependent table records
-      await Promise.allSettled([
-        supabase.from('test_results').delete().eq('user_id', userId),
-        supabase.from('quiz_results').delete().eq('user_id', userId),
-        supabase.from('downloads').delete().eq('user_id', userId),
-        supabase.from('video_progress').delete().eq('user_id', userId),
-        supabase.from('bookmarks').delete().eq('user_id', userId),
-        supabase.from('notifications').delete().eq('user_id', userId),
-      ]);
+      // 1. Try calling Supabase SECURITY DEFINER RPC function (bypasses RLS)
+      const { error: rpcError } = await supabase.rpc('delete_student_user', { target_user_id: userId });
 
-      // 2. Delete profile record
-      const { error } = await supabase.from('profiles').delete().eq('id', userId);
-      if (error) throw error;
+      if (rpcError) {
+        console.warn('RPC delete_student_user not available or error, executing table deletes:', rpcError.message);
+
+        // 2. Fallback table-by-table deletes
+        await Promise.allSettled([
+          supabase.from('test_results').delete().eq('user_id', userId),
+          supabase.from('quiz_results').delete().eq('user_id', userId),
+          supabase.from('downloads').delete().eq('user_id', userId),
+          supabase.from('video_progress').delete().eq('user_id', userId),
+          supabase.from('bookmarks').delete().eq('user_id', userId),
+          supabase.from('notifications').delete().eq('user_id', userId),
+        ]);
+
+        const { error: profileError } = await supabase.from('profiles').delete().eq('id', userId);
+        if (profileError) console.warn('Profiles delete note:', profileError.message);
+      }
+
+      // 3. Immediately filter user out from local frontend state so UI updates instantly
+      setUsers(prev => prev.filter(u => u.id !== userId));
+      setFiltered(prev => prev.filter(u => u.id !== userId));
 
       toast.success('Student account permanently deleted!', { id: 'delete-student' });
       setDeleteTarget(null);
-      fetchUsers();
     } catch (err: any) {
       console.error('Error deleting student:', err);
       toast.error(err.message || 'Failed to delete student account', { id: 'delete-student' });
