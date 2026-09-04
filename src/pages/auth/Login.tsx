@@ -6,6 +6,7 @@ import toast from 'react-hot-toast';
 import { AuthLayout } from '@/components/layouts/AuthLayout';
 import { useAuth } from '@/hooks/useAuth';
 import { authService } from '@/services/authService';
+import { supabase } from '@/supabase/client';
 
 interface LoginForm {
   email: string;
@@ -43,14 +44,34 @@ export const Login = () => {
 
   const onSubmit = async (data: LoginForm) => {
     setIsLoading(true);
+    const cleanEmail = data.email.trim().toLowerCase();
     try {
-      const result = await signIn(data.email, data.password);
+      // 1. Check if an account profile exists for this email
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('id, email')
+        .eq('email', cleanEmail)
+        .maybeSingle();
+
+      if (!profile) {
+        toast.error('Account not available. Please create an account first.');
+        setIsLoading(false);
+        return;
+      }
+
+      // 2. Account exists -> proceed with sign in
+      const result = await signIn(cleanEmail, data.password);
       const currentUser = await authService.getCurrentUser();
       const userRole = currentUser?.role || result.user?.user_metadata?.role || 'student';
       toast.success('Welcome back!');
       navigate(userRole === 'admin' ? '/admin/dashboard' : '/student/dashboard');
     } catch (error: any) {
-      toast.error(error.message || 'Login failed. Check your credentials.');
+      console.error('Login error details:', error);
+      if (error.message?.includes('Invalid login credentials')) {
+        toast.error('Incorrect password. Please check your password or use Forgot Password.');
+      } else {
+        toast.error(error.message || 'Login failed. Please try again.');
+      }
     } finally {
       setIsLoading(false);
     }
