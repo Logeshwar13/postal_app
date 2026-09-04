@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { User, Mail, Phone, MapPin, Camera, Save, Lock, Calendar, Award, FileText, Video, ClipboardCheck, Eye, EyeOff } from 'lucide-react';
+import { User, Mail, Phone, MapPin, Camera, Save, Lock, Calendar, Award, FileText, Video, ClipboardCheck, Eye, EyeOff, Locate, X } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useAuthStore } from '@/store/authStore';
 import { authService } from '@/services/authService';
@@ -24,6 +24,7 @@ export const StudentProfile = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [showPwModal, setShowPwModal] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [locating, setLocating] = useState(false);
   const [showPw, setShowPw] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [stats, setStats] = useState({ testsCompleted: 0, quizAttempts: 0, materialsDownloaded: 0, videosWatched: 0 });
@@ -48,6 +49,57 @@ export const StudentProfile = () => {
       ]);
       setStats({ testsCompleted: tests.count || 0, quizAttempts: quiz.count || 0, materialsDownloaded: downloads.count || 0, videosWatched: videos.count || 0 });
     } catch { /* silent */ }
+  };
+
+  const handleCancel = () => {
+    if (user) {
+      setFormData({
+        full_name: user.full_name || '',
+        phone: user.phone || '',
+        address: user.address || '',
+      });
+    }
+    setIsEditing(false);
+  };
+
+  const handleDetectLocation = () => {
+    if (!navigator.geolocation) {
+      toast.error('Geolocation is not supported by your browser');
+      return;
+    }
+
+    setLocating(true);
+    toast.loading('Detecting location...', { id: 'geo' });
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        try {
+          const { latitude, longitude } = position.coords;
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`,
+            { headers: { 'Accept-Language': 'en' } }
+          );
+          const data = await res.json();
+          if (data && data.display_name) {
+            setFormData((prev) => ({ ...prev, address: data.display_name }));
+            toast.success('Address auto-detected!', { id: 'geo' });
+          } else {
+            toast.error('Could not determine location name', { id: 'geo' });
+          }
+        } catch (err) {
+          console.error('Reverse geocoding error:', err);
+          toast.error('Failed to fetch address details', { id: 'geo' });
+        } finally {
+          setLocating(false);
+        }
+      },
+      (error) => {
+        console.error('Geolocation error:', error);
+        toast.error('Location access denied or unavailable', { id: 'geo' });
+        setLocating(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -140,8 +192,8 @@ export const StudentProfile = () => {
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <button onClick={() => setIsEditing(!isEditing)} style={{ width: '100%', padding: '10px 0', borderRadius: 10, border: 'none', background: isEditing ? '#f3f4f6' : '#C8102E', color: isEditing ? '#374151' : 'white', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                <User size={14} />{isEditing ? 'Cancel Edit' : 'Edit Profile'}
+              <button onClick={() => isEditing ? handleCancel() : setIsEditing(true)} style={{ width: '100%', padding: '10px 0', borderRadius: 10, border: 'none', background: isEditing ? '#f3f4f6' : '#C8102E', color: isEditing ? '#374151' : 'white', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                {isEditing ? <X size={14} /> : <User size={14} />}{isEditing ? 'Cancel Edit' : 'Edit Profile'}
               </button>
               <button onClick={() => setShowPwModal(true)} style={{ width: '100%', padding: '10px 0', borderRadius: 10, border: '1.5px solid #e5e7eb', background: 'white', color: '#374151', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
                 <Lock size={14} />Change Password
@@ -172,7 +224,31 @@ export const StudentProfile = () => {
             <Field label="Email" value={user.email} disabled type="email" icon={<Mail size={16} />} />
             <Field label="Phone Number" value={formData.phone} onChange={(e: any) => setFormData(p => ({ ...p, phone: e.target.value }))} disabled={!isEditing} type="tel" icon={<Phone size={16} />} placeholder="Enter your phone" />
             <div>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 6 }}>Address</label>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', margin: 0 }}>Address</label>
+                {isEditing && (
+                  <button
+                    type="button"
+                    onClick={handleDetectLocation}
+                    disabled={locating}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: '#C8102E',
+                      fontSize: 12,
+                      fontWeight: 600,
+                      cursor: locating ? 'not-allowed' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      padding: 0,
+                    }}
+                  >
+                    <Locate size={13} style={{ animation: locating ? 'spin 1s linear infinite' : 'none' }} />
+                    {locating ? 'Detecting...' : 'Auto-detect location'}
+                  </button>
+                )}
+              </div>
               <div style={{ position: 'relative' }}>
                 <MapPin size={16} style={{ position: 'absolute', left: 12, top: 12, color: '#9ca3af' }} />
                 <textarea value={formData.address} onChange={e => !isEditing ? null : setFormData(p => ({ ...p, address: e.target.value }))} disabled={!isEditing} rows={3} placeholder="Enter your address"
@@ -181,9 +257,54 @@ export const StudentProfile = () => {
               </div>
             </div>
             {isEditing && (
-              <button type="submit" disabled={loading} style={{ padding: '12px 24px', borderRadius: 10, border: 'none', background: '#C8102E', color: 'white', fontSize: 14, fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center', opacity: loading ? 0.7 : 1 }}>
-                <Save size={16} />{loading ? 'Saving...' : 'Save Changes'}
-              </button>
+              <div style={{ display: 'flex', gap: 12, marginTop: 6 }}>
+                <button
+                  type="button"
+                  onClick={handleCancel}
+                  disabled={loading}
+                  style={{
+                    flex: 1,
+                    padding: '12px 20px',
+                    borderRadius: 10,
+                    border: '1.5px solid #e5e7eb',
+                    background: 'white',
+                    color: '#374151',
+                    fontSize: 14,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
+                  }}
+                >
+                  <X size={16} />
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  style={{
+                    flex: 2,
+                    padding: '12px 24px',
+                    borderRadius: 10,
+                    border: 'none',
+                    background: '#C8102E',
+                    color: 'white',
+                    fontSize: 14,
+                    fontWeight: 700,
+                    cursor: loading ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    justifyContent: 'center',
+                    opacity: loading ? 0.7 : 1,
+                  }}
+                >
+                  <Save size={16} />
+                  {loading ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
             )}
           </form>
         </div>
