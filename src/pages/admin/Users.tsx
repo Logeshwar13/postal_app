@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, UserCheck, UserX, Calendar, Award, Users, Shield } from 'lucide-react';
+import { Search, UserCheck, UserX, Calendar, Award, Users, Shield, Trash2 } from 'lucide-react';
 import { supabase } from '@/supabase/client';
 import { formatDate } from '@/utils/formatters';
 import toast from 'react-hot-toast';
@@ -21,6 +21,7 @@ export const AdminUsers = () => {
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
   const [isLoading, setIsLoading] = useState(true);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [stats, setStats] = useState({ totalUsers: 0, totalStudents: 0, totalAdmins: 0, newThisMonth: 0 });
 
   useEffect(() => { fetchUsers(); }, []);
@@ -51,6 +52,44 @@ export const AdminUsers = () => {
       toast.success(`Role updated to ${newRole}`);
       fetchUsers();
     } catch { toast.error('Failed to update role'); }
+  };
+
+  const handleDeleteUser = async (userId: string, userName: string, role: string) => {
+    if (role !== 'student') {
+      toast.error('Only student accounts can be deleted');
+      return;
+    }
+
+    const confirmMsg = `Are you sure you want to permanently delete student "${userName || 'this user'}"?\n\nThis will remove all their test results, quiz attempts, downloads, video progress, and profile from the database. This action cannot be undone.`;
+
+    if (!confirm(confirmMsg)) return;
+
+    try {
+      setDeletingId(userId);
+      toast.loading('Deleting student records...', { id: 'delete-student' });
+
+      // 1. Delete dependent table records
+      await Promise.allSettled([
+        supabase.from('test_results').delete().eq('user_id', userId),
+        supabase.from('quiz_results').delete().eq('user_id', userId),
+        supabase.from('downloads').delete().eq('user_id', userId),
+        supabase.from('video_progress').delete().eq('user_id', userId),
+        supabase.from('bookmarks').delete().eq('user_id', userId),
+        supabase.from('notifications').delete().eq('user_id', userId),
+      ]);
+
+      // 2. Delete profile record
+      const { error } = await supabase.from('profiles').delete().eq('id', userId);
+      if (error) throw error;
+
+      toast.success('Student account permanently deleted!', { id: 'delete-student' });
+      fetchUsers();
+    } catch (err: any) {
+      console.error('Error deleting student:', err);
+      toast.error(err.message || 'Failed to delete student account', { id: 'delete-student' });
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   const statItems = [
@@ -148,13 +187,44 @@ export const AdminUsers = () => {
                     </td>
                     {/* Actions */}
                     <td style={{ padding: '14px 20px' }}>
-                      <button onClick={() => handleToggleRole(u.id, u.role)}
-                        style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 14px', borderRadius: 8, border: '1.5px solid #e5e7eb', background: 'white', color: '#374151', fontSize: 12, fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s', whiteSpace: 'nowrap' }}
-                        onMouseEnter={e => { (e.currentTarget.style.borderColor = '#C8102E'); (e.currentTarget.style.color = '#C8102E'); }}
-                        onMouseLeave={e => { (e.currentTarget.style.borderColor = '#e5e7eb'); (e.currentTarget.style.color = '#374151'); }}
-                      >
-                        {u.role === 'admin' ? <><UserX size={13} />Remove Admin</> : <><UserCheck size={13} />Make Admin</>}
-                      </button>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <button onClick={() => handleToggleRole(u.id, u.role)}
+                          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 12px', borderRadius: 8, border: '1.5px solid #e5e7eb', background: 'white', color: '#374151', fontSize: 12, fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s', whiteSpace: 'nowrap' }}
+                          onMouseEnter={e => { (e.currentTarget.style.borderColor = '#C8102E'); (e.currentTarget.style.color = '#C8102E'); }}
+                          onMouseLeave={e => { (e.currentTarget.style.borderColor = '#e5e7eb'); (e.currentTarget.style.color = '#374151'); }}
+                        >
+                          {u.role === 'admin' ? <><UserX size={13} />Remove Admin</> : <><UserCheck size={13} />Make Admin</>}
+                        </button>
+
+                        {u.role === 'student' && (
+                          <button
+                            onClick={() => handleDeleteUser(u.id, u.full_name || u.email, u.role)}
+                            disabled={deletingId === u.id}
+                            title="Permanently delete student account"
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 5,
+                              padding: '7px 12px',
+                              borderRadius: 8,
+                              border: '1.5px solid #fee2e2',
+                              background: '#fef2f2',
+                              color: '#ef4444',
+                              fontSize: 12,
+                              fontWeight: 600,
+                              cursor: deletingId === u.id ? 'not-allowed' : 'pointer',
+                              transition: 'all 0.15s',
+                              whiteSpace: 'nowrap',
+                              opacity: deletingId === u.id ? 0.6 : 1,
+                            }}
+                            onMouseEnter={e => { if (deletingId !== u.id) { e.currentTarget.style.background = '#ef4444'; e.currentTarget.style.color = 'white'; e.currentTarget.style.borderColor = '#ef4444'; } }}
+                            onMouseLeave={e => { if (deletingId !== u.id) { e.currentTarget.style.background = '#fef2f2'; e.currentTarget.style.color = '#ef4444'; e.currentTarget.style.borderColor = '#fee2e2'; } }}
+                          >
+                            <Trash2 size={13} />
+                            {deletingId === u.id ? 'Deleting...' : 'Delete Student'}
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
